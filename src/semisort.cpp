@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <iostream>
-#include "parlay/parallel.h"
+#include "../parlaylib/include/parlay/parallel.h"
 
 using namespace std;
 
