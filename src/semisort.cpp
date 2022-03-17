@@ -15,19 +15,24 @@ struct record {
 
 template <class T>
 void semiSort(parlay::sequence<T> &A){
+    // Step 1
     hash<T, int> hash_fn;
     int param1 = 3; // TODO: this is a parameter we can change -- k > 2 from algo
     int k = pow(A.size(), param1);
-    for (int i = 0; i < A.size(); i++) { // TODO: can parallelize
+    parlay::parallel_for (int i = 0; i < A.size(); i++) { // TODO: can parallelize
         A[i].hashed_key = hash_fn(A[i]) % k;
     }
+    // Step 2
     paralay::sequence<T> sample;
     int param2 = 1; 
     int p = param2 / log(A.size()); // this is theta(1 / log n) so we can autotune later
     int cp = ceil(1 / p);
-    for (int i = 0; i < p; i++) {
+    parlay::parallel_for (int i = 0; i < p; i++) {
         sample[i] = A[rand() % cp + i/p];
     }
+    // Step 3
+    sample.sort(); // TODO: this needs to be radix sort from PBBS
+    // Step 4
     
 }
 
