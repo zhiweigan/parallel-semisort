@@ -25,7 +25,7 @@ void semiSort(parlay::sequence<T> &A){
     // Create a frequency map for step 4
     unordered_map<int, int> key_frequency;
     // Step 2
-    paralay::sequence<T> sample;
+    parlay::sequence<T> sample;
     int param2 = 1; 
     int p = param2 / log(A.size()); // this is theta(1 / log n) so we can autotune later
     int cp = ceil(1 / p);
