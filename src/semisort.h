@@ -85,8 +85,7 @@ bool bucket_cas(eType *p, eType o, eType n)
       reinterpret_cast<std::atomic<eType> *>(p), &o, n, std::memory_order_relaxed, std::memory_order_relaxed);
 }
 
-
 // round n down to nearest multiple of m
-int roundDown(int n, int m) {
+int round_down(int n, int m) {
   return n >= 0 ? (n / m) * m : ((n - m + 1) / m) * m;
 }
