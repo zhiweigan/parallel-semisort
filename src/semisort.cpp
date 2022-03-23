@@ -42,7 +42,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     int n = arr.size();
 
     // Step 2
-    double p = SAMPLE_PROBABILITY_CONSTANT / log(n); // this is theta(1 / log n) so we can autotune later
+    double p = SAMPLE_PROBABILITY_CONSTANT / log2(n); // this is theta(1 / log n) so we can autotune later
     int cp = ceil(1 / p);
     
 #ifdef DEBUG
@@ -97,25 +97,34 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     parallel_for(int i = 1; i < cp; i++){
         if (sample[i].hashed_key != sample[i - 1].hashed_key){
             differences[i-1] = i;
-            uniques.push_back(sample[i].hashed_key);
+            uniques.push_back(sample[i-1].hashed_key);
         } else{
             differences[i-1] = -1;
         }
     }
     differences[cp-1] = cp;
+    uniques.push_back(sample[cp-1].hashed_key); 
+
     auto offset_filter = [&](int x) { return x != -1; };
     parlay::sequence<int> offsets = parlay::filter(differences, offset_filter);
     parlay::sequence<int> counts(offsets.size());
     parlay::sequence<int> bucket_sizes(offsets.size());
 
 #ifdef DEBUG
-    cout << "differences, offsets" << endl;
+    cout << "differences, offsets, uniques" << endl;
     for (int i = 0; i < cp; i++) {
-        cout << differences[i] << endl;
-    }
+        cout << differences[i] << ", ";
+    } 
+    cout<<endl;
     for (int i = 0; i < offsets.size(); i++) {
-        cout << offsets[i] << endl;
+        cout << offsets[i] << ", ";
     }
+    cout<<endl; 
+    for (int i = 0; i < uniques.size(); i++)
+    {
+        cout << uniques[i] << ", ";
+    }
+    cout<<endl;
 #endif
 
     // make sure this is corect
@@ -135,8 +144,8 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
 
-    parlay::hashtable<parlay::hash_numeric<long long>> hashed_key_to_offset(n, parlay::hash_numeric<long long>());
-    parlay::hashtable<parlay::hash_numeric<long long>> hashed_key_to_bucket_size(n, parlay::hash_numeric<long long>());
+    parlay::hashtable<hash_numeric<long long>> hashed_key_to_offset(n, hash_numeric<long long>());
+    parlay::hashtable<hash_numeric<long long>> hashed_key_to_bucket_size(n, hash_numeric<long long>());
     // add heavy keys
     int current_bucket_offset = 0;
     for(int i = 0; i < offsets.size(); i++) {
@@ -155,7 +164,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     cout<<"bucket id to array offset"<<endl;
     parlay::sequence<long long> offset_entries = hashed_key_to_offset.entries();
     parlay::sequence<long long> size_entries = hashed_key_to_bucket_size.entries();
-    for(int i = 0; i < offsets.size(); i++){
+    for(int i = 0; i < offset_entries.size(); i++){
         cout << offset_entries[i] << " " << size_entries[i] << endl;
     }
 #endif
@@ -179,8 +188,8 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
             long long offset_entry = hashed_key_to_offset.find(arr[i].hashed_key);
             long long size_entry = hashed_key_to_bucket_size.find(arr[i].hashed_key);
-            int offset = offset_entry >> 32;
-            int size = size_entry >> 32;
+            int offset = (int)offset_entry;
+            int size = (int)size_entry;
             int insert_index = offset + rand() % size;
             while (true)
             {
@@ -210,7 +219,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
 
-    // Step 5
+    // Step 7
 }
 
 // if what you get from hashing k is the same as what you get from hashing j
@@ -220,12 +229,12 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 // hash them guaranteed
 
 int main() {
-    int ex_size = 10;
+    int ex_size = 20;
     parlay::sequence<record<string, int>> arr(ex_size);
     for(int i = 0; i < ex_size; i++){
         record<string, int> a = {
             "object_" + to_string(i),
-            i / 2,
+            i / 10,
             0
         };
         arr[i] = a;

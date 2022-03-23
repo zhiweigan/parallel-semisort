@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <random>
 
+#include "../parlaylib/include/parlay/utilities.h"
 #include "../parlaylib/include/parlay/primitives.h"
 #include "../parlaylib/include/parlay/parallel.h"
 #include "../parlaylib/include/parlay/sequence.h"
@@ -49,18 +50,18 @@ struct Bucket
   }
 };
 
-template <class ObjectType, class KeyType>
-struct bucket_to_address
+template <class T>
+struct hash_numeric
 {
-  using kType = KeyType;
-  using eType = ObjectType;
-  eType empty() { return {-1, -1}; }
-  kType getKey(eType v) { return v.bucket_id; }
+  using eType = T;
+  using kType = T;
+  eType empty() { return -1; }
+  kType getKey(eType v) { return v >> 32; }
   size_t hash(kType v) { return static_cast<size_t>(parlay::hash64(v)); }
   int cmp(kType v, kType b) { return (v > b) ? 1 : ((v == b) ? 0 : -1); }
   bool replaceQ(eType, eType) { return 0; }
   eType update(eType v, eType) { return v; }
-  bool cas(kType *p, kType o, kType n)
+  bool cas(eType *p, eType o, eType n)
   {
     // TODO: Make this use atomics properly. This is a quick
     // fix to get around the fact that the hashtable does
