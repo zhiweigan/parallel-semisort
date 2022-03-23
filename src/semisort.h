@@ -63,11 +63,6 @@ struct hash_numeric
   eType update(eType v, eType) { return v; }
   bool cas(eType *p, eType o, eType n)
   {
-    // TODO: Make this use atomics properly. This is a quick
-    // fix to get around the fact that the hashtable does
-    // not use atomics. This will break for types that
-    // do not inline perfectly inside a std::atomic (i.e.,
-    // any type that the standard library chooses to lock)
     return std::atomic_compare_exchange_strong_explicit(
         reinterpret_cast<std::atomic<eType> *>(p), &o, n, std::memory_order_relaxed, std::memory_order_relaxed);
   }
@@ -86,11 +81,12 @@ int size_func(int num_records, double p, int n, double c) {
 template <class eType>
 bool bucket_cas(eType *p, eType o, eType n)
 {
-  // TODO: Make this use atomics properly. This is a quick
-  // fix to get around the fact that the hashtable does
-  // not use atomics. This will break for types that
-  // do not inline perfectly inside a std::atomic (i.e.,
-  // any type that the standard library chooses to lock)
   return std::atomic_compare_exchange_strong_explicit(
       reinterpret_cast<std::atomic<eType> *>(p), &o, n, std::memory_order_relaxed, std::memory_order_relaxed);
+}
+
+
+// round n down to nearest multiple of m
+int roundDown(int n, int m) {
+  return n >= 0 ? (n / m) * m : ((n - m + 1) / m) * m;
 }

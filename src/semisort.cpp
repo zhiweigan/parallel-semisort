@@ -13,6 +13,7 @@ using parlay::parallel_for;
 #define SAMPLE_PROBABILITY_CONSTANT 1
 #define DELTA_THRESHOLD 1
 #define F_C 1.25
+#define LIGHT_KEY_BUCKET_CONSTANT 2
 
 template <class Object, class Key>
 void semi_sort(parlay::sequence<record<Object, Key>> &arr)
@@ -93,17 +94,17 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
     // debug this
     parlay::sequence<int> differences(cp);
-    parlay::sequence<int> uniques;
+    parlay::sequence<int> unique_hashed_keys;
     parallel_for(int i = 1; i < cp; i++){
         if (sample[i].hashed_key != sample[i - 1].hashed_key){
             differences[i-1] = i;
-            uniques.push_back(sample[i-1].hashed_key);
+            unique_hashed_keys.push_back(sample[i-1].hashed_key);
         } else{
             differences[i-1] = -1;
         }
     }
     differences[cp-1] = cp;
-    uniques.push_back(sample[cp-1].hashed_key); 
+    unique_hashed_keys.push_back(sample[cp-1].hashed_key); 
 
     auto offset_filter = [&](int x) { return x != -1; };
     parlay::sequence<int> offsets = parlay::filter(differences, offset_filter);
@@ -120,9 +121,9 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
         cout << offsets[i] << ", ";
     }
     cout<<endl; 
-    for (int i = 0; i < uniques.size(); i++)
+    for (int i = 0; i < unique_hashed_keys.size(); i++)
     {
-        cout << uniques[i] << ", ";
+        cout << unique_hashed_keys[i] << ", ";
     }
     cout<<endl;
 #endif
@@ -150,8 +151,8 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     int current_bucket_offset = 0;
     for(int i = 0; i < offsets.size(); i++) {
         if(counts[i] > gamma){
-            Bucket offset = { uniques[i], current_bucket_offset };
-            Bucket size = {uniques[i], bucket_sizes[i]};
+            Bucket offset = { unique_hashed_keys[i], current_bucket_offset };
+            Bucket size = {unique_hashed_keys[i], bucket_sizes[i]};
             hashed_key_to_offset.insert((long long) offset);
             hashed_key_to_bucket_size.insert((long long) size);
             current_bucket_offset += bucket_sizes[i];
@@ -159,6 +160,21 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 
     // partition and create arrays for light keys here
+    // 7a
+    double logn = log2((double)n);
+    int num_buckets = LIGHT_KEY_BUCKET_CONSTANT * (double) n / logn / logn;
+    int nk = pow(arr.size(), HASH_RANGE_K);
+    int bucket_range = (double) nk / (double) num_buckets;
+
+    parlay::sequence<int> light_bucket_sizes(num_buckets);
+    parlay::sequence<int> light_bucket_offsets(num_buckets);
+
+    for(int i = 0; i < num_buckets; i++){
+        // do 7a here, populate
+        // WIP
+        light_bucket_sizes[i] = bucket_size;
+        light_bucket_offsets = current_bucket_offset;
+    }
 
 #ifdef DEBUG
     cout<<"bucket id to array offset"<<endl;
@@ -178,12 +194,13 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 
     // scatter heavy keys
-    double logn = log2((double)n);
     int num_partitions = (int)((double)n / logn);
     parallel_for(int partition = 0; partition <= num_partitions; partition++) {
         for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
-            if (i >= n) break;
-            if (hashed_key_to_offset.find(arr[i].hashed_key) == (Bucket){-1, -1}) continue;
+            if (i >= n) 
+                break;
+            if (hashed_key_to_offset.find(arr[i].hashed_key) == (Bucket){-1, -1}) 
+                continue;
 
             long long offset_entry = hashed_key_to_offset.find(arr[i].hashed_key);
             long long size_entry = hashed_key_to_bucket_size.find(arr[i].hashed_key);
@@ -202,7 +219,36 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
             }
         }
     }
-    
+ 
+
+    // 7b
+    // scatter light keys
+    parallel_for(int partition = 0; partition <= num_partitions; partition++) {
+        for (int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
+            if (i >= n)
+                break;
+            int rounded_down_key = round_down(arr[i].hashed_key, bucket_range);
+            if (hashed_key_to_offset.find(rounded_down_key) == (Bucket){-1, -1})
+                continue;
+
+            long long offset_entry = hashed_key_to_offset.find(rounded_down_key);
+            long long size_entry = hashed_key_to_bucket_size.find(rounded_down_key);
+            int offset = (int)offset_entry;
+            int size = (int)size_entry;
+            int insert_index = offset + rand() % size;
+            while (true) {
+                record<Object, Key> c = buckets[insert_index];
+                if (c.isEmpty()) {
+                    if (bucket_cas(&buckets[insert_index].hashed_key, -1, rounded_down_key))
+                    {
+                        buckets[insert_index] = arr[i];
+                        break;
+                    }
+                }
+                insert_index++;
+            }
+        }
+    }
 
 #ifdef DEBUG
     cout<<"bucket"<<endl;
@@ -212,9 +258,20 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // Step 7b, 7c
+    auto light_key_filter = [&](record x) { return x.hashed_key != -1; };
+    parallel_for(int i = 0; i < num_buckets; i++) {
+        // sort here
+        int start_range = light_bucket_offsets[i];
+        int end_range = light_bucket_offsets[i] + light_bucket_sizes[i];
+        sort(buckets.begin() + start_range, buckets.begin() + end_range);
 
-
-
+        parlay::filter_into(
+            buckets.cut(start_range, end_range),
+            buckets.cut(start_range, end_range),
+            light_key_filter
+        );
+    }
+    
     // Step 8
 }
 
