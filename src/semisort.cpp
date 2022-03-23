@@ -177,12 +177,11 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
         buckets[i].hashed_key = -1;
     }
 
-    // scatter heavy keys, check this works
+    // scatter heavy keys
     double logn = log2((double)n);
     int num_partitions = (int)((double)n / logn);
     parallel_for(int partition = 0; partition <= num_partitions; partition++) {
-        for(int i = partition * logn; i < (int)((partition + 1) * logn); i++)
-        {
+        for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
             if (i >= n) break;
             if (hashed_key_to_offset.find(arr[i].hashed_key) == (Bucket){-1, -1}) continue;
 
@@ -191,22 +190,15 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
             int offset = (int)offset_entry;
             int size = (int)size_entry;
             int insert_index = offset + rand() % size;
-            while (true)
-            {
+            while (true) {
                 record<Object, Key> c = buckets[insert_index];
-                if (c.isEmpty())
-                {
-                    if (bucket_cas(&buckets[insert_index].hashed_key, -1, arr[i].hashed_key))
-                    {
+                if (c.isEmpty()) {
+                    if (bucket_cas(&buckets[insert_index].hashed_key, -1, arr[i].hashed_key)) {
                         buckets[insert_index] = arr[i];
                         break;
                     }
-                    insert_index++;
                 }
-                else
-                {
-                    insert_index++;
-                }
+                insert_index++;
             }
         }
     }
@@ -219,7 +211,11 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
 
-    // Step 7
+    // Step 7b, 7c
+
+
+
+    // Step 8
 }
 
 // if what you get from hashing k is the same as what you get from hashing j
