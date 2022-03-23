@@ -12,6 +12,7 @@ using parlay::parallel_for;
 #define HASH_RANGE_K 3
 #define SAMPLE_PROBABILITY_CONSTANT 1
 #define DELTA_THRESHOLD 1
+#define F_C 1.25
 
 template <class Object, class Key>
 void semi_sort(parlay::sequence<record<Object, Key>> &arr)
@@ -38,9 +39,10 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 { 
     // Create a frequency map for step 4
     unordered_map<int, int> key_frequency;
+    int n = arr.size();
 
     // Step 2
-    double p = SAMPLE_PROBABILITY_CONSTANT / log(arr.size()); // this is theta(1 / log n) so we can autotune later
+    double p = SAMPLE_PROBABILITY_CONSTANT / log(n); // this is theta(1 / log n) so we can autotune later
     int cp = ceil(1 / p);
     
 #ifdef DEBUG
@@ -49,7 +51,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // Sample array
-    parlay::sequence<bool> sample_index(arr.size());
+    parlay::sequence<bool> sample_index(n);
     parallel_for (int i = 0; i < cp; i++) {
         sample_index[(int)(rand() % cp + i / p)] = true;
     }
@@ -79,32 +81,132 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // Step 3
-    auto f = [&](record<Object, Key> x) { return x.hashed_key; };
-    parlay::internal::integer_sort(parlay::make_slice(sample.begin(), sample.end()), f, sizeof(int));
+    auto comp = [&](record<Object, Key> x) { return x.hashed_key; };
+    parlay::internal::integer_sort(parlay::make_slice(sample.begin(), sample.end()), comp, sizeof(int));
 
     // Step 4
-    int gamma = DELTA_THRESHOLD * log(arr.size());
+    int gamma = DELTA_THRESHOLD * log(n);
 
 #ifdef DEBUG
     cout << "Gamma: " << gamma << endl;
 #endif
 
-    auto H_filter = [&](record<Object, Key> x) 
-        { return key_frequency[x.hashed_key] > gamma; };
-    auto L_filter = [&](record<Object, Key> x)
-        { return key_frequency[x.hashed_key] <= gamma; };
-
-    parlay::sequence<record<Object, Key>> H = parlay::filter(sample, H_filter);
-    parlay::sequence<record<Object, Key>> L = parlay::filter(sample, L_filter);
+    // debug this
+    parlay::sequence<int> differences(cp);
+    parlay::sequence<int> uniques;
+    parallel_for(int i = 1; i < cp; i++){
+        if (sample[i].hashed_key != sample[i - 1].hashed_key){
+            differences[i-1] = i;
+            uniques.push_back(sample[i].hashed_key);
+        } else{
+            differences[i-1] = -1;
+        }
+    }
+    differences[cp-1] = cp;
+    auto offset_filter = [&](int x) { return x != -1; };
+    parlay::sequence<int> offsets = parlay::filter(differences, offset_filter);
+    parlay::sequence<int> counts(offsets.size());
+    parlay::sequence<int> bucket_sizes(offsets.size());
 
 #ifdef DEBUG
-    cout<<"Heavy Records:"<<endl;
-    for(int i = 0; i < H.size(); i++){
-        cout << H[i].obj << " " << H[i].key << " " << H[i].hashed_key <<endl;
+    cout << "differences, offsets" << endl;
+    for (int i = 0; i < cp; i++) {
+        cout << differences[i] << endl;
     }
-    cout << "Light Records:" << endl;
-    for (int i = 0; i < L.size(); i++) {
-        cout << L[i].obj << " " << L[i].key << " " << L[i].hashed_key << endl;
+    for (int i = 0; i < offsets.size(); i++) {
+        cout << offsets[i] << endl;
+    }
+#endif
+
+    // make sure this is corect
+    parallel_for(int i = 0; i < offsets.size(); i++){
+        if (i == 0){
+            counts[i] = offsets[i]; 
+        } else{
+            counts[i] = offsets[i] - offsets[i-1];
+        }
+        bucket_sizes[i] = size_func(counts[i], p, n, F_C);
+    }
+
+#ifdef DEBUG
+    cout<<"counts to bucket sizes"<<endl;
+    for (int i = 0; i < offsets.size(); i++) {
+        cout << counts[i] << " : " << bucket_sizes[i] << endl;
+    }
+#endif
+
+    parlay::hashtable<parlay::hash_numeric<long long>> hashed_key_to_offset(n, parlay::hash_numeric<long long>());
+    parlay::hashtable<parlay::hash_numeric<long long>> hashed_key_to_bucket_size(n, parlay::hash_numeric<long long>());
+    // add heavy keys
+    int current_bucket_offset = 0;
+    for(int i = 0; i < offsets.size(); i++) {
+        if(counts[i] > gamma){
+            Bucket offset = { uniques[i], current_bucket_offset };
+            Bucket size = {uniques[i], bucket_sizes[i]};
+            hashed_key_to_offset.insert((long long) offset);
+            hashed_key_to_bucket_size.insert((long long) size);
+            current_bucket_offset += bucket_sizes[i];
+        }
+    }
+
+    // partition and create arrays for light keys here
+
+#ifdef DEBUG
+    cout<<"bucket id to array offset"<<endl;
+    parlay::sequence<long long> offset_entries = hashed_key_to_offset.entries();
+    parlay::sequence<long long> size_entries = hashed_key_to_bucket_size.entries();
+    for(int i = 0; i < offsets.size(); i++){
+        cout << offset_entries[i] << " " << size_entries[i] << endl;
+    }
+#endif
+
+    parlay::sequence<record<Object, Key>> buckets(current_bucket_offset);
+
+    // how to get around this?
+    parallel_for(int i = 0; i < current_bucket_offset; i++) {
+        buckets[i] = {};
+        buckets[i].hashed_key = -1;
+    }
+
+    // scatter heavy keys, check this works
+    double logn = log2((double)n);
+    int num_partitions = (int)((double)n / logn);
+    parallel_for(int partition = 0; partition <= num_partitions; partition++) {
+        for(int i = partition * logn; i < (int)((partition + 1) * logn); i++)
+        {
+            if (i >= n) break;
+            if (hashed_key_to_offset.find(arr[i].hashed_key) == (Bucket){-1, -1}) continue;
+
+            long long offset_entry = hashed_key_to_offset.find(arr[i].hashed_key);
+            long long size_entry = hashed_key_to_bucket_size.find(arr[i].hashed_key);
+            int offset = offset_entry >> 32;
+            int size = size_entry >> 32;
+            int insert_index = offset + rand() % size;
+            while (true)
+            {
+                record<Object, Key> c = buckets[insert_index];
+                if (c.isEmpty())
+                {
+                    if (bucket_cas(&buckets[insert_index].hashed_key, -1, arr[i].hashed_key))
+                    {
+                        buckets[insert_index] = arr[i];
+                        break;
+                    }
+                    insert_index++;
+                }
+                else
+                {
+                    insert_index++;
+                }
+            }
+        }
+    }
+    
+
+#ifdef DEBUG
+    cout<<"bucket"<<endl;
+    for(int i = 0; i < buckets.size(); i++){
+        cout<<buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
     }
 #endif
 

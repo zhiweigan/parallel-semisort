@@ -42,7 +42,8 @@ build/./src/semisort.cpp.o: src/semisort.cpp src/semisort.h \
   src/../parlaylib/include/parlay/sequence.h \
   src/../parlaylib/include/parlay/internal/group_by.h \
   src/../parlaylib/include/parlay/internal/../primitives.h \
-  src/../parlaylib/include/parlay/internal/collect_reduce.h
+  src/../parlaylib/include/parlay/internal/collect_reduce.h \
+  src/../parlaylib/include/parlay/hash_table.h
 
 src/semisort.h:
 
@@ -133,3 +134,5 @@ src/../parlaylib/include/parlay/internal/group_by.h:
 src/../parlaylib/include/parlay/internal/../primitives.h:
 
 src/../parlaylib/include/parlay/internal/collect_reduce.h:
+
+src/../parlaylib/include/parlay/hash_table.h:
