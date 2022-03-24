@@ -19,7 +19,7 @@ struct record
   int hashed_key;
 
   inline bool isEmpty() {
-    return hashed_key == -1;
+    return hashed_key == 0;
   }
 
   inline bool operator!=(record a) {
