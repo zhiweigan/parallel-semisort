@@ -124,18 +124,20 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
 
+    // hash table T
     parlay::hashtable<hash_buckets> hash_table(n, hash_buckets());
 
     int num_buckets = LIGHT_KEY_BUCKET_CONSTANT * ((double)n / logn / logn + 1);
     parlay::sequence<int> light_key_bucket_sample_counts(num_buckets);
-    parlay::sequence<pair<unsigned long long, pair<unsigned int, unsigned int>>> heavy_key_bucket_sizes;
+    parlay::sequence<Bucket> heavy_key_buckets;
 
-    // add heavy keys
+    // add heavy buckets and count number of light items in light buckets
     unsigned int current_bucket_offset = 0;
     for(int i = 0; i < num_unique_in_sample; i++) {
         if(counts[i] > gamma){
             unsigned int bucket_size = (unsigned int) size_func(counts[i], p, n, F_C);
-            heavy_key_bucket_sizes.push_back(make_pair(unique_hashed_keys[i], make_pair(current_bucket_offset, bucket_size)));
+            Bucket new_heavy_bucket = {unique_hashed_keys[i], current_bucket_offset, bucket_size, true}; 
+            heavy_key_buckets.push_back(new_heavy_bucket);
             current_bucket_offset += bucket_size;
         } else{
             unsigned long long bucket_num = unique_hashed_keys[i] / num_buckets;
@@ -143,30 +145,25 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
         }
     }
 
-    parallel_for(0, heavy_key_bucket_sizes.size(), [&](size_t i) {
-        pair<unsigned long long, pair<unsigned int, unsigned int>> key_with_properties = heavy_key_bucket_sizes[i];
-        Bucket heavy = {key_with_properties.first, key_with_properties.second.first, key_with_properties.second.second, true};
-        hash_table.insert(heavy);     
+    parallel_for(0, heavy_key_buckets.size(), [&](size_t i) {
+        hash_table.insert(heavy_key_buckets[i]);     
     });
 
     // partition and create arrays for light keys here
     // 7a
     int nk = pow(arr.size(), HASH_RANGE_K);
     unsigned long long bucket_range = (double) nk / (double) num_buckets;
-
-    parlay::sequence<unsigned int> light_bucket_sizes(num_buckets);
-    parlay::sequence<unsigned int> light_bucket_offsets(num_buckets);
+    parlay::sequence<Bucket> light_buckets(num_buckets);
 
     for(int i = 0; i < num_buckets; i++){
         unsigned int bucket_size = size_func(light_key_bucket_sample_counts[i], p, n, F_C);
-        light_bucket_offsets[i] = current_bucket_offset;
-        light_bucket_sizes[i] = bucket_size;
+        Bucket new_light_bucket = {i * bucket_range, current_bucket_offset, bucket_size, false};
+        light_buckets[i] = new_light_bucket;
         current_bucket_offset += bucket_size;
     }
 
     parallel_for(0, num_buckets, [&](unsigned long long i) {
-        Bucket light = {i * bucket_range, light_bucket_offsets[i], light_bucket_sizes[i], false};
-        hash_table.insert(light); 
+        hash_table.insert(light_buckets[i]); 
     });
 
 #ifdef DEBUG
@@ -186,10 +183,11 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
         for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
             if (i >= n) 
                 break;
-            if (hash_table.find(arr[i].hashed_key) == (Bucket){0, 0, 0, 0}) // continue if it is not a heavy key
-                continue;
 
             Bucket entry = hash_table.find(arr[i].hashed_key);
+            if (entry == (Bucket){0, 0, 0, 0}) // continue if it is not a heavy key
+                continue;
+
             unsigned int insert_index = entry.offset + rand() % entry.size;
             while (true) {
                 cout<<"here"<<endl;
@@ -214,12 +212,13 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
             if (i >= n)
                 break;
             int rounded_down_key = round_down(arr[i].hashed_key, bucket_range);
-            if (hash_table.find(arr[i].hashed_key) != (Bucket){0, 0, 0, 0}) // exclude keys that are heavy keys
-                continue;
-            if (hash_table.find(rounded_down_key) == (Bucket){0, 0, 0, 0}) // redundant? check if this affects runtime
+            if (hash_table.find(arr[i].hashed_key) != (Bucket){0, 0, 0, 0}) // perhaps we can remove this somehow
                 continue;
 
             Bucket entry = hash_table.find(rounded_down_key);
+            if (entry == (Bucket){0, 0, 0, 0}) 
+                continue;
+
             unsigned int insert_index = entry.offset + rand() % entry.size;
             while (true) {
                 record<Object, Key> c = buckets[insert_index];
@@ -239,8 +238,8 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     auto light_key_comparison = [&](record<Object, Key> a, record<Object, Key> b){ return a.hashed_key < b.hashed_key; };
     parallel_for(0, num_buckets, [&](size_t i) {
         // sort here
-        int start_range = light_bucket_offsets[i];
-        int end_range = light_bucket_offsets[i] + light_bucket_sizes[i];
+        int start_range = light_buckets[i].offset;
+        int end_range = light_buckets[i].offset + light_buckets[i].size;
         parlay::sort_inplace(buckets.cut(start_range, end_range), light_key_comparison); // sort light buckets
 
         auto out_cut = buckets.cut(start_range, end_range); // is this packing correct?
