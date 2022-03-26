@@ -188,10 +188,8 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
             unsigned int insert_index = entry.offset + rand() % entry.size;
             while (true) {
-                cout<<"here"<<endl;
                 record<Object, Key> c = buckets[insert_index];
                 if (c.isEmpty()) {
-                    cout<<"here"<<endl;
                     if (bucket_cas(&buckets[insert_index].hashed_key, 0, arr[i].hashed_key)) {
                         buckets[insert_index] = arr[i];
                         break;
@@ -257,8 +255,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
 #ifdef DEBUG
     cout << "bucket" << endl;
-    for (int i = 0; i < buckets.size(); i++)
-    {
+    for (int i = 0; i < buckets.size(); i++) {
         cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
     }
 #endif
@@ -283,8 +280,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
 #ifdef DEBUG
     cout << "bucket after pack" << endl;
-    for (int i = 0; i < buckets.size(); i++)
-    {
+    for (int i = 0; i < buckets.size(); i++) {
         cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
     }
 #endif
@@ -311,8 +307,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
 #ifdef DEBUG
     cout << "result" << endl;
-    for (int i = 0; i < arr.size(); i++)
-    {
+    for (int i = 0; i < arr.size(); i++) {
         cout << i << " " << arr[i].obj << " " << arr[i].key << " " << arr[i].hashed_key << endl;
     }
 #endif
@@ -340,4 +335,8 @@ int main() {
     shuffle(arr.begin(), arr.end(), rng);
 
     semi_sort(arr);
+
+    for (int i = 0; i < ex_size; i++) {
+        cout << i << " " << arr[i].obj << " " << arr[i].key << " " << arr[i].hashed_key << endl;
+    }
 }
