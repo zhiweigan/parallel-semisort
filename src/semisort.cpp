@@ -15,7 +15,7 @@ template <class Object, class Key>
 void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 {
     hash<Key> hash_fn;
-    int k = pow(arr.size(), HASH_RANGE_K);
+    unsigned long long k = pow(arr.size(), HASH_RANGE_K);
 
     parallel_for(0, arr.size(), [&](size_t i) {
         arr[i].hashed_key = hash_fn(arr[i].key) % k + 1;
@@ -86,7 +86,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 
     int num_unique_in_sample = offsets.size();
     parlay::sequence<int> counts(num_unique_in_sample);
-    parlay::sequence<int> unique_hashed_keys(num_unique_in_sample);
+    parlay::sequence<unsigned long long> unique_hashed_keys(num_unique_in_sample);
 
     parallel_for(0, num_unique_in_sample, [&](size_t i) {
         unique_hashed_keys[i] = sample[offsets[i]-1].hashed_key;
@@ -124,64 +124,56 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
 
-    parlay::hashtable<hash_numeric<long long>> hashed_key_to_offset(n, hash_numeric<long long>());
-    parlay::hashtable<hash_numeric<long long>> hashed_key_to_bucket_size(n, hash_numeric<long long>());
-    parlay::hashtable<hash_numeric<long long>> light_hashed_key_to_offset(n, hash_numeric<long long>());
-    parlay::hashtable<hash_numeric<long long>> light_hashed_key_to_bucket_size(n, hash_numeric<long long>());
+    parlay::hashtable<hash_buckets> hash_table(n, hash_buckets());
 
     int num_buckets = LIGHT_KEY_BUCKET_CONSTANT * ((double)n / logn / logn + 1);
     parlay::sequence<int> light_key_bucket_sample_counts(num_buckets);
-    parlay::sequence<pair<int, pair<int, int>>> heavy_key_bucket_sizes;
+    parlay::sequence<pair<unsigned long long, pair<unsigned int, unsigned int>>> heavy_key_bucket_sizes;
 
     // add heavy keys
-    int current_bucket_offset = 0;
+    unsigned int current_bucket_offset = 0;
     for(int i = 0; i < num_unique_in_sample; i++) {
         if(counts[i] > gamma){
-            int bucket_size = size_func(counts[i], p, n, F_C);
+            unsigned int bucket_size = (unsigned int) size_func(counts[i], p, n, F_C);
             heavy_key_bucket_sizes.push_back(make_pair(unique_hashed_keys[i], make_pair(current_bucket_offset, bucket_size)));
             current_bucket_offset += bucket_size;
         } else{
-            int bucket_num = unique_hashed_keys[i] / num_buckets;
+            unsigned long long bucket_num = unique_hashed_keys[i] / num_buckets;
             light_key_bucket_sample_counts[bucket_num] += counts[i];
         }
     }
 
     parallel_for(0, heavy_key_bucket_sizes.size(), [&](size_t i) {
-        pair<int, pair<int, int>> key_with_properties = heavy_key_bucket_sizes[i];
-        Bucket offset = {key_with_properties.first, key_with_properties.second.first};
-        Bucket size = {key_with_properties.first, key_with_properties.second.second};
-        hashed_key_to_offset.insert((long long)offset);    
-        hashed_key_to_bucket_size.insert((long long)size); 
+        pair<unsigned long long, pair<unsigned int, unsigned int>> key_with_properties = heavy_key_bucket_sizes[i];
+        Bucket heavy = {key_with_properties.first, key_with_properties.second.first, key_with_properties.second.second, true};
+        hash_table.insert(heavy);     
     });
 
     // partition and create arrays for light keys here
     // 7a
     int nk = pow(arr.size(), HASH_RANGE_K);
-    int bucket_range = (double) nk / (double) num_buckets;
+    unsigned long long bucket_range = (double) nk / (double) num_buckets;
 
-    parlay::sequence<int> light_bucket_sizes(num_buckets);
-    parlay::sequence<int> light_bucket_offsets(num_buckets);
+    parlay::sequence<unsigned int> light_bucket_sizes(num_buckets);
+    parlay::sequence<unsigned int> light_bucket_offsets(num_buckets);
 
     for(int i = 0; i < num_buckets; i++){
-        int bucket_size = size_func(light_key_bucket_sample_counts[i], p, n, F_C);
+        unsigned int bucket_size = size_func(light_key_bucket_sample_counts[i], p, n, F_C);
         light_bucket_offsets[i] = current_bucket_offset;
         light_bucket_sizes[i] = bucket_size;
         current_bucket_offset += bucket_size;
     }
 
-    parallel_for(0, num_buckets, [&](int i) {
-        Bucket offset = {i * bucket_range, light_bucket_offsets[i]};
-        Bucket size = {i * bucket_range, light_bucket_sizes[i]};
-        light_hashed_key_to_offset.insert((long long)offset);   
-        light_hashed_key_to_bucket_size.insert((long long)size); 
+    parallel_for(0, num_buckets, [&](unsigned long long i) {
+        Bucket light = {i * bucket_range, light_bucket_offsets[i], light_bucket_sizes[i], false};
+        hash_table.insert(light); 
     });
 
 #ifdef DEBUG
-    cout<<"bucket id to array offset"<<endl;
-    parlay::sequence<long long> offset_entries = hashed_key_to_offset.entries();
-    parlay::sequence<long long> size_entries = hashed_key_to_bucket_size.entries();
-    for(int i = 0; i < offset_entries.size(); i++){
-        cout << offset_entries[i] << " " << size_entries[i] << endl;
+    cout<<"buckets"<<endl;
+    parlay::sequence<Bucket> entries = hash_table.entries();
+    for(int i = 0; i < entries.size(); i++){
+        cout << entries[i].bucket_id << " " << entries[i].offset << " " << entries[i].size << " " << entries[i].isHeavy << " " << endl;
     }
 #endif
 
@@ -194,17 +186,16 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
         for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
             if (i >= n) 
                 break;
-            if (hashed_key_to_offset.find(arr[i].hashed_key) == (Bucket){-1, -1}) // continue if it is not a heavy key
+            if (hash_table.find(arr[i].hashed_key) == (Bucket){0, 0, 0, 0}) // continue if it is not a heavy key
                 continue;
 
-            long long offset_entry = hashed_key_to_offset.find(arr[i].hashed_key);
-            long long size_entry = hashed_key_to_bucket_size.find(arr[i].hashed_key);
-            int offset = (int)offset_entry;
-            int size = (int)size_entry;
-            int insert_index = offset + rand() % size;
+            Bucket entry = hash_table.find(arr[i].hashed_key);
+            unsigned int insert_index = entry.offset + rand() % entry.size;
             while (true) {
+                cout<<"here"<<endl;
                 record<Object, Key> c = buckets[insert_index];
                 if (c.isEmpty()) {
+                    cout<<"here"<<endl;
                     if (bucket_cas(&buckets[insert_index].hashed_key, 0, arr[i].hashed_key)) {
                         buckets[insert_index] = arr[i];
                         break;
@@ -223,16 +214,13 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
             if (i >= n)
                 break;
             int rounded_down_key = round_down(arr[i].hashed_key, bucket_range);
-            if (hashed_key_to_offset.find(arr[i].hashed_key) != (Bucket){-1, -1}) // exclude keys that are heavy keys
+            if (hash_table.find(arr[i].hashed_key) != (Bucket){0, 0, 0, 0}) // exclude keys that are heavy keys
                 continue;
-            if (light_hashed_key_to_offset.find(rounded_down_key) == (Bucket){-1, -1}) // redundant? check if this affects runtime
+            if (hash_table.find(rounded_down_key) == (Bucket){0, 0, 0, 0}) // redundant? check if this affects runtime
                 continue;
 
-            long long offset_entry = light_hashed_key_to_offset.find(rounded_down_key);
-            long long size_entry = light_hashed_key_to_bucket_size.find(rounded_down_key);
-            int offset = (int)offset_entry;
-            int size = (int)size_entry;
-            int insert_index = offset + rand() % size;
+            Bucket entry = hash_table.find(rounded_down_key);
+            unsigned int insert_index = entry.offset + rand() % entry.size;
             while (true) {
                 record<Object, Key> c = buckets[insert_index];
                 if (c.isEmpty()) {
@@ -279,7 +267,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // step 8
-    int num_partitions_step8 = min(1000, current_bucket_offset);
+    int num_partitions_step8 = min((unsigned int) 1000, current_bucket_offset);
     parlay::sequence<int> interval_length(num_partitions_step8);
     parlay::sequence<int> interval_prefix_sum(num_partitions_step8);
     parallel_for(0, num_partitions_step8+1, [&](size_t partition) { // leq or lt?

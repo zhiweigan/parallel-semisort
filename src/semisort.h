@@ -33,20 +33,39 @@ struct record
 
 struct Bucket
 {
-  int bucket_id;
-  int property;
+  unsigned long long bucket_id;
+  unsigned int offset;
+  unsigned int size : 31;
+  bool isHeavy;
 
   inline bool operator!=(Bucket a) {
-    return a.bucket_id != bucket_id || a.property != property;
+    return a.bucket_id != bucket_id || a.offset != offset || a.size != size || a.isHeavy != isHeavy;
   }
 
   inline bool operator==(Bucket a)
   {
-    return a.bucket_id == bucket_id && a.property == property;
+    return a.bucket_id == bucket_id && a.size == size && a.offset == offset && a.isHeavy == isHeavy;
   }
+};
 
-  operator long long () {
-    return ((long long)bucket_id) << 32 | ((long long)property);
+struct hash_buckets
+{
+  using eType = Bucket;
+  using kType = unsigned long long;
+  eType empty() { return {0, 0, 0, 0}; }
+  kType getKey(eType v) { return v.bucket_id; }
+  size_t hash(kType v) { return static_cast<size_t>(parlay::hash64(v)); }
+  int cmp(kType v, kType b) { return (v > b) ? 1 : ((v == b) ? 0 : -1); }
+  bool replaceQ(eType, eType) { return 0; }
+  eType update(eType v, eType) { return v; }
+  bool cas(eType *p, eType o, eType n)
+  {
+    auto pb = reinterpret_cast<std::atomic<unsigned long long> *>(&(p->bucket_id));
+    if (std::atomic_compare_exchange_strong_explicit(pb, &(o.bucket_id), n.bucket_id, std::memory_order_relaxed, std::memory_order_relaxed)) {
+      *p = n;
+      return true;
+    }
+    return false;
   }
 };
 
@@ -68,14 +87,14 @@ struct hash_numeric
   }
 };
 
-int size_func(int num_records, double p, int n, double c) {
+unsigned int size_func(unsigned int num_records, double p, unsigned int n, double c) {
   double lnn = (double)log((double) n);
   double clnn = c * lnn;
 
   double fs = (num_records + clnn + sqrt(clnn * clnn + 2 * num_records * c * clnn)) / p;
   double array_size = 1.1 * fs;
 
-  return (int) pow(2, ceil(log(array_size) / log(2)));
+  return (unsigned int) pow(2, ceil(log(array_size) / log(2)));
 }
 
 template <class eType>
