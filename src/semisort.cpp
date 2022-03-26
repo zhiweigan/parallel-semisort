@@ -3,8 +3,6 @@
 using namespace std;
 using parlay::parallel_for;
 
-#define DEBUG 1
-
 #define HASH_RANGE_K 3
 #define SAMPLE_PROBABILITY_CONSTANT 1
 #define DELTA_THRESHOLD 1

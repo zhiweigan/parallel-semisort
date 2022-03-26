@@ -69,24 +69,6 @@ struct hash_buckets
   }
 };
 
-template <class T>
-struct hash_numeric
-{
-  using eType = T;
-  using kType = T;
-  eType empty() { return -1; }
-  kType getKey(eType v) { return v >> 32; }
-  size_t hash(kType v) { return static_cast<size_t>(parlay::hash64(v)); }
-  int cmp(kType v, kType b) { return (v > b) ? 1 : ((v == b) ? 0 : -1); }
-  bool replaceQ(eType, eType) { return 0; }
-  eType update(eType v, eType) { return v; }
-  bool cas(eType *p, eType o, eType n)
-  {
-    return std::atomic_compare_exchange_strong_explicit(
-        reinterpret_cast<std::atomic<eType> *>(p), &o, n, std::memory_order_relaxed, std::memory_order_relaxed);
-  }
-};
-
 unsigned int size_func(unsigned int num_records, double p, unsigned int n, double c) {
   double lnn = (double)log((double) n);
   double clnn = c * lnn;
