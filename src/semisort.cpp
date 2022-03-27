@@ -3,18 +3,21 @@
 using namespace std;
 using parlay::parallel_for;
 
-#define HASH_RANGE_K 3
+#define DEBUG 1
+
+#define HASH_RANGE_K 2.25
 #define SAMPLE_PROBABILITY_CONSTANT 1
 #define DELTA_THRESHOLD 1
 #define F_C 1.25
 #define LIGHT_KEY_BUCKET_CONSTANT 2
 
 template <class Object, class Key>
-void semi_sort(parlay::sequence<record<Object, Key>> &arr)
+void semi_sort_with_hash(parlay::sequence<record<Object, Key>> &arr)
 {
     hash<Key> hash_fn;
     unsigned long long k = pow(arr.size(), HASH_RANGE_K);
 
+    // Hash every key in parallel
     parallel_for(0, arr.size(), [&](size_t i) {
         arr[i].hashed_key = hash_fn(arr[i].key) % k + 1;
     });
@@ -26,11 +29,12 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
     }
 #endif
     
-    semi_sort_recur(arr);
+    // Call the semisort function on the hashed keys
+    semi_sort(arr);
 }
 
 template <class Object, class Key>
-void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
+void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 { 
     // Create a frequency map for step 4
     int n = arr.size();
@@ -38,47 +42,54 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     // Step 2
     double logn = log2((double)n);
     double p = SAMPLE_PROBABILITY_CONSTANT / logn; // this is theta(1 / log n) so we can autotune later
-    int cp = ceil(1 / p);
-    assert(cp != 0);
+
+    int num_samples = ceil(1 / p);
+    assert(num_samples != 0);
 
 #ifdef DEBUG
     cout << "p: " << p << endl;
-    cout << "cp: " << cp << endl;
+    cout << "cp: " << num_samples << endl;
 #endif
 
     // Sample array
     parlay::sequence<bool> sample_index(n);
-    parallel_for(0, cp, [&](size_t i) {
-        sample_index[(int)(rand() % cp + i / p)] = true;
+
+    // Choose which items to sample
+    parallel_for(0, num_samples, [&](size_t i) {
+        sample_index[(int)(rand() % num_samples + i / p)] = true;
     });
+
+    // Pack sampled elements into smaller vector
     parlay::sequence<record<Object, Key>> sample = parlay::pack(arr, sample_index);
 
 #ifdef DEBUG
     cout << "Sample Objects:" << endl;
-    for (int i = 0; i < cp; i++) {
+    for (int i = 0; i < num_samples; i++) {
         cout << sample[i].obj << " " << sample[i].key << " " << sample[i].hashed_key << endl;
     }
 #endif
 
-    // Step 3
+    // Step 3 sort samples so we can more easily determine offsets
     auto comp = [&](record<Object, Key> x) { return x.hashed_key; };
     parlay::internal::integer_sort(parlay::make_slice(sample.begin(), sample.end()), comp, sizeof(int));
 
-    // Step 4
+    // Step 4 
     int gamma = DELTA_THRESHOLD * log(n);
 
 #ifdef DEBUG
     cout << "Gamma: " << gamma << endl;
 #endif
 
-    parlay::sequence<int> differences(cp);
-    parallel_for(0, cp, [&](size_t i) {
+    parlay::sequence<int> differences(num_samples);
+    // get array differecnes
+    parallel_for(0, num_samples, [&](size_t i) {
         if (sample[i].hashed_key != sample[i+1].hashed_key){
             differences[i] = i+1;
         }
     });
-    differences[cp-1] = cp;
+    differences[num_samples-1] = num_samples;
 
+    // get offsets of differences in sorted array
     auto offset_filter = [&](int x) { return x != 0; };
     parlay::sequence<int> offsets = parlay::filter(differences, offset_filter);
 
@@ -86,13 +97,14 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     parlay::sequence<int> counts(num_unique_in_sample);
     parlay::sequence<unsigned long long> unique_hashed_keys(num_unique_in_sample);
 
+    // save the unique hashed keys into an array for future use
     parallel_for(0, num_unique_in_sample, [&](size_t i) {
         unique_hashed_keys[i] = sample[offsets[i]-1].hashed_key;
     });
 
 #ifdef DEBUG
     cout << "differences, offsets, uniques" << endl;
-    for (int i = 0; i < cp; i++) {
+    for (int i = 0; i < num_samples; i++) {
         cout << differences[i] << ", ";
     } 
     cout<<endl;
@@ -125,6 +137,7 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
     // hash table T
     parlay::hashtable<hash_buckets> hash_table(n, hash_buckets());
 
+    // calculate the number of light buckets we want
     int num_buckets = LIGHT_KEY_BUCKET_CONSTANT * ((double)n / logn / logn + 1);
     parlay::sequence<int> light_key_bucket_sample_counts(num_buckets);
     parlay::sequence<Bucket> heavy_key_buckets;
@@ -138,11 +151,13 @@ void semi_sort_recur(parlay::sequence<record<Object, Key>> &arr)
             heavy_key_buckets.push_back(new_heavy_bucket);
             current_bucket_offset += bucket_size;
         } else{
+            // determine how big we should make the buckets
             unsigned long long bucket_num = unique_hashed_keys[i] / num_buckets;
             light_key_bucket_sample_counts[bucket_num] += counts[i];
         }
     }
 
+    // insert buckets into table in parallel
     parallel_for(0, heavy_key_buckets.size(), [&](size_t i) {
         hash_table.insert(heavy_key_buckets[i]);     
     });
@@ -334,7 +349,7 @@ int main() {
     auto rng = default_random_engine {};
     shuffle(arr.begin(), arr.end(), rng);
 
-    semi_sort(arr);
+    semi_sort_with_hash(arr);
 
     for (int i = 0; i < ex_size; i++) {
         cout << i << " " << arr[i].obj << " " << arr[i].key << " " << arr[i].hashed_key << endl;
