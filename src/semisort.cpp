@@ -3,7 +3,7 @@
 using namespace std;
 using parlay::parallel_for;
 
-#define DEBUG 1
+// #define DEBUG 1
 
 #define HASH_RANGE_K 2.25
 #define SAMPLE_PROBABILITY_CONSTANT 1
@@ -198,9 +198,13 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
     // scatter heavy keys
     int num_partitions = (int)((double)n / logn);
     parallel_for(0, num_partitions+1, [&](size_t partition) {
-        for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
-            if (i >= n) 
-                break;
+        int end_partition = (int)((partition + 1) * logn);
+        int end_state = (end_partition > n) ? n : end_partition;
+        for(int i = partition * logn; i < end_state; i++) {
+
+        // for(int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
+        //     if (i >= n) 
+        //         break;
 
             Bucket entry = hash_table.find(arr[i].hashed_key);
             if (entry == (Bucket){0, 0, 0, 0}) // continue if it is not a heavy key
@@ -224,9 +228,12 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
     // 7b
     // scatter light keys
     parallel_for(0, num_partitions+1, [&](size_t partition) {
-        for (int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
-            if (i >= n)
-                break;
+        int end_partition = (int)((partition + 1) * logn);
+        int end_state = (end_partition > n) ? n : end_partition;
+        for(int i = partition * logn; i < end_state; i++) {
+        // for (int i = partition * logn; i < (int)((partition + 1) * logn); i++) {
+        //     if (i >= n)
+        //         break;
             int rounded_down_key = round_down(arr[i].hashed_key, bucket_range);
             if (hash_table.find(arr[i].hashed_key) != (Bucket){0, 0, 0, 0}) // perhaps we can remove this somehow
                 continue;
@@ -340,12 +347,16 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 // hash them guaranteed
 
 int main() {
-    int ex_size = 20;
-    parlay::sequence<record<string, int>> arr(ex_size);
+    int ex_size = 50;
+    // parlay::sequence<record<string, int>> arr(ex_size);
+    parlay::sequence<record<string, string>> arr(ex_size);
+    string boo[4] = {"hello", "goodbye", "wassup", "yoooo"};
     for(int i = 0; i < ex_size; i++){
-        record<string, int> a = {
+        // record<string, int> a = {
+        record<string, string> a = {
             "object_" + to_string(i),
-            i / 15,
+            // i / 5,
+            boo[i % 4],
             0
         };
         arr[i] = a;
