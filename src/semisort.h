@@ -27,7 +27,7 @@ struct record
   }
 
   inline bool operator==(record a) {
-    return a.hashed_key == hashed_key || a.obj == obj || a.key == key;
+    return a.hashed_key == hashed_key && a.obj == obj && a.key == key;
   }
 };
 
