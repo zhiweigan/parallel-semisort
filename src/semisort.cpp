@@ -119,13 +119,18 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // get size of heavy key buckets
-    parallel_for(0, num_unique_in_sample, [&](size_t i) {
-        if (i == 0){
-            counts[i] = offsets[i]; 
-        } else{
-            counts[i] = offsets[i] - offsets[i-1];
-        }
+    counts[0] = offsets[0];
+    parallel_for(1, num_unique_in_sample, [&](size_t i) {
+        counts[i] = offsets[i] - offsets[i-1];
     });
+
+    // parallel_for(0, num_unique_in_sample, [&](size_t i) {
+    //     if (i == 0){
+    //         counts[i] = offsets[i]; 
+    //     } else{
+    //         counts[i] = offsets[i] - offsets[i-1];
+    //     }
+    // });
 
 #ifdef DEBUG
     cout<<"counts to bucket sizes"<<endl;
