@@ -10,16 +10,14 @@
 #include <iostream>
 #include <random>
 
-#include <semisort/semisort.h>
+#include "../src/semisort.h"
 #include "genzipf.cpp"
 
 using benchmark::Counter;
 
 using parlay::parallel_for;
 
-#ifndef PARALLEL
-#define parallel_for for
-#endif
+const float HASH_RANGE_K = constants::HASH_RANGE_K;
 
 // Use this macro to avoid accidentally timing the destructors
 // of the output produced by algorithms that return data
@@ -56,8 +54,6 @@ using parlay::parallel_for;
   state.counters["    Elements/sec"] = Counter(state.iterations()*(n), Counter::kIsRate);                                            \
   state.counters["       Bytes/sec"] = Counter(state.iterations()*(n)*(sizeof(T)), Counter::kIsRate);
 
-const float HASH_RANGE_K = 2.25; // here should put this in the header
-
 // ------------------------- Input generation methods -------------------------------
 
 //
@@ -76,7 +72,7 @@ static parlay::sequence<record<uint64_t, uint64_t>> uniform_distribution_input(s
     record<uint64_t, uint64_t> elt = {
       0,
       key,
-      static_cast<int>(parlay::hash64(key) % k) // here should change to uint64_t
+      static_cast<int>(parlay::hash64(key) % k)
     };
     arr[i] = elt;
   }
@@ -100,7 +96,7 @@ static parlay::sequence<record<uint64_t, uint64_t>> exponential_distribution_inp
     record<uint64_t, uint64_t> elt = {
       0,
       key,
-      static_cast<int>(parlay::hash64(key) % k) // here should change to uint64_t
+      static_cast<int>(parlay::hash64(key) % k)
     };
     arr[i] = elt;
   }
@@ -123,7 +119,7 @@ static parlay::sequence<record<uint64_t, uint64_t>> zipfian_distribution_input(s
     record<uint64_t, uint64_t> elt = {
       0,
       key,
-      static_cast<int>(parlay::hash64(key) % k) // here should change to uint64_t
+      static_cast<int>(parlay::hash64(key) % k)
     };
     arr[i] = elt;
   }
@@ -160,7 +156,7 @@ static void bench_semisort_figure1_a(benchmark::State& state) {
   while (state.KeepRunningBatch(10)) {
     for (int i = 0; i < 10; i++) {
       COPY_NO_TIME(out, in);
-      // semisort::semi_sort_recur(out); // here does not check for correctness
+      semi_sort(out); // here does not check for correctness
     }
   }
 
@@ -181,7 +177,7 @@ static void bench_semisort_figure1_b(benchmark::State& state) {
   while (state.KeepRunningBatch(10)) {
     for (int i = 0; i < 10; i++) {
       COPY_NO_TIME(out, in);
-      // semisort::semi_sort_recur(out); // here does not check for correctness
+      semi_sort(out); // here does not check for correctness
     }
   }
 
@@ -202,7 +198,7 @@ static void bench_semisort_figure1_c(benchmark::State& state) {
   while (state.KeepRunningBatch(10)) {
     for (int i = 0; i < 10; i++) {
       COPY_NO_TIME(out, in);
-      // semisort::semi_sort_recur(out); // here does not check for correctness
+      semi_sort(out); // here does not check for correctness
     }
   }
 
@@ -213,7 +209,7 @@ static void bench_semisort_figure1_c(benchmark::State& state) {
 // Benchmark figure 2 exponential distribution input. Question: how to benchmark different number of threads?
 //
 template<typename T>
-static void bench_semisort_figure2_exponential(benchmark::State& state) {
+static void bench_semisort_figure2_a(benchmark::State& state) {
   size_t n = 100000000;
   auto in = exponential_distribution_input(100000000, 100000); // figure2 has fixed size and para
   auto out = in;
@@ -221,7 +217,7 @@ static void bench_semisort_figure2_exponential(benchmark::State& state) {
   while (state.KeepRunningBatch(10)) {
     for (int i = 0; i < 10; i++) {
       COPY_NO_TIME(out, in);
-      // semisort::semi_sort_recur(out); // here does not check for correctness
+      semi_sort(out); // here does not check for correctness
     }
   }
 
@@ -232,7 +228,7 @@ static void bench_semisort_figure2_exponential(benchmark::State& state) {
 // Benchmark figure 2 uniform distribution input. Question: how to benchmark different number of threads?
 //
 template<typename T>
-static void bench_semisort_figure2_uniform(benchmark::State& state) {
+static void bench_semisort_figure2_b(benchmark::State& state) {
   size_t n = 100000000;
   auto in = uniform_distribution_input(100000000, 100000000); // figure2 has fixed size and para
   auto out = in;
@@ -240,7 +236,7 @@ static void bench_semisort_figure2_uniform(benchmark::State& state) {
   while (state.KeepRunningBatch(10)) {
     for (int i = 0; i < 10; i++) {
       COPY_NO_TIME(out, in);
-      // semisort::semi_sort_recur(out); // here does not check for correctness
+      semi_sort(out); // here does not check for correctness
     }
   }
 
@@ -302,7 +298,7 @@ static void bench_integer_sort(benchmark::State& state) {
                           ->Unit(benchmark::kMillisecond)                           \
                           ->Args({args});
 
-
+// Figure 1
 BENCH(semisort_figure1_a, size_t, 100);
 BENCH(semisort_figure1_a, size_t, 1000);
 BENCH(semisort_figure1_a, size_t, 10000);
@@ -321,4 +317,6 @@ BENCH(semisort_figure1_c, size_t, 1000000);
 BENCH(semisort_figure1_c, size_t, 10000000);
 BENCH(semisort_figure1_c, size_t, 100000000);
 
-
+// Figure 2
+BENCH(semisort_figure2_a, size_t);
+BENCH(semisort_figure2_a, size_t);
