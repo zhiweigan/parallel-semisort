@@ -1,0 +1,14 @@
+#!/usr/bin/python
+
+bnchmrk="sort"
+benchmark="SemiSort"
+checkProgram="../bench/sortCheck"
+dataDir = "placeholder" # TODO: where is data dir
+
+tests = [
+]
+
+import sys
+import runTests
+runTests.timeAllArgs(bnchmrk, benchmark, checkProgram, dataDir, tests)
+
