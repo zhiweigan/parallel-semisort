@@ -5,11 +5,11 @@
 #include <unordered_set>
 #include <random>
 
-#include "../parlaylib/include/parlay/utilities.h"
-#include "../parlaylib/include/parlay/primitives.h"
-#include "../parlaylib/include/parlay/parallel.h"
-#include "../parlaylib/include/parlay/sequence.h"
-#include "../parlaylib/include/parlay/hash_table.h"
+#include "parlay/utilities.h"
+#include "parlay/primitives.h"
+#include "parlay/parallel.h"
+#include "parlay/sequence.h"
+#include "parlay/hash_table.h"
 
 template <class A, class B>
 struct record
