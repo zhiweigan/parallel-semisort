@@ -90,3 +90,11 @@ bool bucket_cas(eType *p, eType o, eType n)
 int round_down(int n, int m) {
   return n >= 0 ? (n / m) * m : ((n - m + 1) / m) * m;
 }
+
+// ----------------------- DECLARATION -------------------------
+namespace constants {
+  const float HASH_RANGE_K = 2.25;
+}
+
+template <class Object, class Key>
+void semi_sort(parlay::sequence<record<Object, Key>> &arr);

@@ -5,7 +5,9 @@ using parlay::parallel_for;
 
 // #define DEBUG 1
 
-#define HASH_RANGE_K 2.25
+// #define HASH_RANGE_K 2.25 // moved to the header file
+const float HASH_RANGE_K = constants::HASH_RANGE_K;
+
 #define SAMPLE_PROBABILITY_CONSTANT 1
 #define DELTA_THRESHOLD 1
 #define F_C 1.25
