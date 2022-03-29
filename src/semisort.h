@@ -87,13 +87,17 @@ bool bucket_cas(eType *p, eType o, eType n)
 }
 
 // round n down to nearest multiple of m
-int round_down(int n, int m) {
+uint64_t round_down(uint64_t n, uint64_t m) {
   return n >= 0 ? (n / m) * m : ((n - m + 1) / m) * m;
 }
 
 // ----------------------- DECLARATION -------------------------
 namespace constants {
   const float HASH_RANGE_K = 2.25;
+  const float SAMPLE_PROBABILITY_CONSTANT = 1;
+  const float DELTA_THRESHOLD = 1;
+  const float F_C = 1.25;
+  const float LIGHT_KEY_BUCKET_CONSTANT = 2;
 }
 
 template <class Object, class Key>
