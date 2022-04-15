@@ -3,6 +3,8 @@
 using namespace std;
 using parlay::parallel_for;
 
+// #define DEBUG2 1
+
 // #define DEBUG 1
 const float HASH_RANGE_K = constants::HASH_RANGE_K;
 const float SAMPLE_PROBABILITY_CONSTANT = constants::SAMPLE_PROBABILITY_CONSTANT;
@@ -187,7 +189,7 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     // A' in the paper
-    parlay::sequence<record<Object, Key>> buckets(current_bucket_offset);
+    parlay::sequence<record<Object, Key>> buckets(current_bucket_offset + n);
 
     // scatter heavy keys
     uint32_t num_partitions = (int)((double)n / logn);
@@ -216,7 +218,7 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 
     // 7b
     // scatter light keys
-    parallel_for(0, num_partitions+1, [&](size_t partition) {
+    parallel_for(0, num_partitions + 1, [&](size_t partition){
         uint32_t end_partition = (uint32_t)((partition + 1) * logn);
         uint32_t end_state = (end_partition > n) ? n : end_partition;
         for(uint32_t i = partition * logn; i < end_state; i++) {
@@ -239,8 +241,21 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
                 }
                 insert_index++;
             }
-        }
+        } 
     });
+
+
+#ifdef DEBUG2
+    uint32_t items2 = 0;
+    for (uint32_t i = 0; i < current_bucket_offset + 10000; i++)
+    {
+        if (buckets[i].hashed_key != 0)
+        {
+            items2 += 1;
+        }
+    }
+    cout << "items: " << items2 << endl;
+#endif
 
     // Step 7b, 7c
     auto light_key_filter = [&](record<Object, Key> x) { return x.hashed_key != 0; };
@@ -266,19 +281,24 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
         });
     });
 
-#ifdef DEBUG
+#ifdef DEBUG2
     cout << "bucket" << endl;
+    uint32_t items = 0;
     for (uint32_t i = 0; i < buckets.size(); i++) {
-        cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
+        // cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
+        if (buckets[i].hashed_key != 0){
+            items += 1;
+        }
     }
+    cout<<"items: "<<items<<endl;
 #endif
 
     // step 8
-    uint32_t num_partitions_step8 = min((uint32_t) 1000, current_bucket_offset);
+    uint32_t num_partitions_step8 = min((uint32_t) 1000, (uint32_t)buckets.size());
     parlay::sequence<int> interval_length(num_partitions_step8);
     parlay::sequence<int> interval_prefix_sum(num_partitions_step8);
-    parallel_for(0, num_partitions_step8+1, [&](size_t partition) { // leq or lt?
-        uint32_t chunk_length = ceil((double)current_bucket_offset / num_partitions_step8);
+    parallel_for(0, num_partitions_step8, [&](size_t partition) { // leq or lt?
+        uint32_t chunk_length = ceil((double)buckets.size() / num_partitions_step8);
         uint32_t start_range = chunk_length * partition;
         uint32_t cur_chunk_pointer = 0;
 
@@ -291,18 +311,24 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
         interval_length[partition] = cur_chunk_pointer;
     });
 
-#ifdef DEBUG
-    cout << "bucket after pack" << endl;
-    for (uint32_t i = 0; i < buckets.size(); i++) {
-        cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
-    }
-#endif
+// #ifdef DEBUG2
+//     cout << "bucket after pack" << endl;
+//     for (uint32_t i = 0; i < buckets.size(); i++) {
+//         cout << i << " " << buckets[i].obj << " " << buckets[i].key << " " << buckets[i].hashed_key << endl;
+//     }
+// #endif
 
     for (uint32_t i = 1; i < num_partitions_step8; i++) {
-        interval_prefix_sum[i] = interval_length[i] + interval_prefix_sum[i-1];
+        interval_prefix_sum[i] = interval_length[i-1] + interval_prefix_sum[i-1];
     }
 
-#ifdef DEBUG
+#ifdef DEBUG2
+    cout << "interval_length" << endl;
+    for (uint32_t i = 0; i < num_partitions_step8; i++)
+    {
+        cout << interval_length[i] << " ";
+    }
+    cout << endl;
     cout << "interval_prefix_sum" << endl;
     for (uint32_t i = 0; i < num_partitions_step8; i++) {
         cout << interval_prefix_sum[i] << " ";
@@ -311,42 +337,44 @@ void semi_sort(parlay::sequence<record<Object, Key>> &arr)
 #endif
 
     parallel_for(0, num_partitions_step8, [&](size_t partition) {
-        uint32_t chunk_length = ceil((double)current_bucket_offset / num_partitions_step8);
-        uint32_t start_range = interval_prefix_sum[partition];
-        for(uint32_t i = 0; i < interval_length[partition]; i++) {
-            arr[start_range + i] = buckets[chunk_length * partition + i];
+        if (interval_length[partition] != 0) {
+            uint32_t chunk_length = ceil((double)buckets.size() / (num_partitions_step8 + 1));
+            uint32_t start_range = interval_prefix_sum[partition];
+            for (uint32_t i = 0; i < interval_length[partition]; i++){
+                arr[start_range + i] = buckets[chunk_length * partition + i];
+            }
         }
     });
 
-#ifdef DEBUG
-    cout << "result" << endl;
-    for (uint32_t i = 0; i < arr.size(); i++) {
-        cout << i << " " << arr[i].obj << " " << arr[i].key << " " << arr[i].hashed_key << endl;
+// #ifdef DEBUG2
+//     cout << "result" << endl;
+//     for (uint32_t i = 0; i < arr.size(); i++) {
+//         cout << i << " " << arr[i].obj << " " << arr[i].key << " " << arr[i].hashed_key << endl;
+//     }
+// #endif
     }
-#endif
-}
 
 // runs a small test case
 int main() {
-    uint32_t ex_size = 50;
-    parlay::sequence<record<string, int>> int_keys(ex_size);
-    for(int i = 0; i < ex_size; i++){
-        record<string, int> a = {
-            "object_" + to_string(i),
-            i / 5,
-            0
-        };
-        int_keys[i] = a;
-    }
+    uint32_t ex_size = 1000000;
+    // parlay::sequence<record<string, int>> int_keys(ex_size);
+    // for(int i = 0; i < ex_size; i++){
+    //     record<string, int> a = {
+    //         "object_" + to_string(i),
+    //         i % 5,
+    //         0
+    //     };
+    //     int_keys[i] = a;
+    // }
 
     auto rng = default_random_engine {};
-    shuffle(int_keys.begin(), int_keys.end(), rng);
+    // shuffle(int_keys.begin(), int_keys.end(), rng);
 
-    semi_sort_with_hash(int_keys);
+    // semi_sort_with_hash(int_keys);
 
-    for (uint32_t i = 0; i < ex_size; i++) {
-        cout << i << " " << int_keys[i].obj << " " << int_keys[i].key << " " << int_keys[i].hashed_key << endl;
-    }
+    // for (uint32_t i = 0; i < ex_size; i++) {
+    //     cout << i << " " << int_keys[i].obj << " " << int_keys[i].key << " " << int_keys[i].hashed_key << endl;
+    // }
 
     parlay::sequence<record<string, string>> string_keys(ex_size);
     string keys[4] = {"hello", "goodbye", "wassup", "yoooo"};
@@ -363,8 +391,10 @@ int main() {
 
     semi_sort_with_hash(string_keys);
 
-    for (uint32_t i = 0; i < ex_size; i++)
-    {
-        cout << i << " " << string_keys[i].obj << " " << string_keys[i].key << " " << string_keys[i].hashed_key << endl;
-    }
+    cout<<"finished"<<endl;
+
+    // for (uint32_t i = 0; i < ex_size; i++)
+    // {
+    //     cout << i << " " << string_keys[i].obj << " " << string_keys[i].key << " " << string_keys[i].hashed_key << endl;
+    // }
 }
