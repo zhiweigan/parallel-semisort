@@ -94,7 +94,7 @@ uint64_t round_down(uint64_t n, uint64_t m) {
 // ----------------------- DECLARATION -------------------------
 namespace constants {
   const float HASH_RANGE_K = 2.25;
-  const float SAMPLE_PROBABILITY_CONSTANT = 1;
+  const float SAMPLE_PROBABILITY_CONSTANT = 5;
   const float DELTA_THRESHOLD = 1;
   const float F_C = 1.25;
   const float LIGHT_KEY_BUCKET_CONSTANT = 2;
